@@ -1,0 +1,21 @@
+# Normaliza finales de línea: LF en el repositorio, nativo en el working copy.
+# Evita diffs fantasma entre desarrollo en Windows y CI en Linux.
+* text=auto eol=lf
+
+# Scripts que deben ser LF siempre
+*.sh    text eol=lf
+*.py    text eol=lf
+*.sql   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+
+# Binarios: sin conversión
+*.db      binary
+*.sqlite  binary
+*.png     binary
+*.jpg     binary
+*.pdf     binary
+*.xlsx    binary

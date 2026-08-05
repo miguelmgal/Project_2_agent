@@ -1,0 +1,66 @@
+# ---- Secretos: NUNCA se versionan (CLAUDE.md §3 R5) ----
+.env
+.env.*
+!.env.example
+*.pem
+credentials.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- Entornos virtuales / uv ----
+.venv/
+venv/
+env/bin/
+env/lib/
+env/pyvenv.cfg
+# NOTA: la carpeta `env/` del proyecto (schema.sql, seed.py, knowledge_base/)
+# SÍ se versiona. Solo se ignoran los artefactos de virtualenv que puedan caer ahí.
+
+# ---- Base de datos generada (se reconstruye con `uv run python env/seed.py`) ----
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ---- Checkpointer de LangGraph ----
+checkpoints.sqlite*
+*.checkpoint
+
+# ---- Testing / calidad ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+
+# ---- Salidas de evaluación (crudas; el informe agregado SÍ se versiona) ----
+eval/results/
+eval/.deepeval*
+.deepeval*
+temp_test_run_data.json
+promptfoo-output/
+.promptfoo/
+
+# ---- Editores / SO ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Notebooks ----
+.ipynb_checkpoints/
