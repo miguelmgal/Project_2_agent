@@ -26,11 +26,33 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from supportops.config import get_settings
+
 # ------------------------------------------------------------------------- helpers
 
 
 def _h(title: str) -> None:
     print(f"\n{'=' * 70}\n  {title}\n{'=' * 70}")
+
+
+def _api_key() -> str:
+    """Read the API key through the project's own configuration layer.
+
+    P-004: a `.env` file is not the same thing as an environment variable. The
+    OpenAI SDK reads `os.environ` and never looks at `.env`, so constructing
+    `OpenAI()` with no arguments raises AuthenticationError even when the key sits
+    right there in the file. `pydantic-settings` is what actually loads `.env`, so
+    the key is read from Settings and passed to the clients explicitly.
+
+    Going through Settings rather than `load_dotenv()` also means this spike
+    exercises the same credential path as the rest of the project -- one way to
+    read secrets, not two.
+    """
+    key = get_settings().openai_api_key
+    if key is None:  # pragma: no cover -- Settings validates this at startup
+        msg = "OPENAI_API_KEY is not configured. Copy .env.example to .env."
+        raise ValueError(msg)
+    return key.get_secret_value()
 
 
 def _pkg(name: str) -> str:
@@ -70,7 +92,7 @@ def list_models(limit: int = 40) -> list[str]:
     _h("Available models")
     from openai import OpenAI
 
-    client = OpenAI()
+    client = OpenAI(api_key=_api_key())
     ids = sorted(m.id for m in client.models.list())
 
     # Heuristic filter: chat/reasoning models are the candidates we care about.
@@ -111,7 +133,7 @@ def test_tool_calling(model_id: str) -> bool:
         args_schema=GetOrderStatusArgs,
     )
 
-    llm = ChatOpenAI(model=model_id, timeout=120).bind_tools([tool])
+    llm = ChatOpenAI(model=model_id, api_key=_api_key(), timeout=120).bind_tools([tool])
     response = llm.invoke("Where is my order ORD-1042?")
 
     calls: list[dict[str, Any]] = getattr(response, "tool_calls", []) or []
@@ -135,7 +157,7 @@ def probe_param(model_id: str, label: str, **kwargs: Any) -> bool:
     from langchain_openai import ChatOpenAI
 
     try:
-        ChatOpenAI(model=model_id, timeout=60, **kwargs).invoke("Say OK.")
+        ChatOpenAI(model=model_id, api_key=_api_key(), timeout=60, **kwargs).invoke("Say OK.")
     except Exception as exc:
         # Broad catch on purpose: this is a diagnostic and we want the raw error
         # text verbatim, to paste into the BITACORA problem registry.
@@ -153,10 +175,12 @@ def test_sampling_params(model_id: str) -> None:
     probe_param(model_id, "temperature=0", temperature=0)
     print("\n  P-003 -- is `seed` accepted (best-effort reproducibility)?")
     probe_param(model_id, "seed=42", model_kwargs={"seed": 42})
+    # ASCII only: the Windows console defaults to cp1252 and mangles characters
+    # like the section sign, which turns diagnostic output into noise (P-006).
     print(
         "\n  NOTE: even when `seed` is accepted it does NOT guarantee identical\n"
         "  outputs. The K=3 run protocol and the trajectory-stability metric stay\n"
-        "  in place (see PLAN_IMPLEMENTACION.md §6.4)."
+        "  in place (see PLAN_IMPLEMENTACION.md section 6.4)."
     )
 
 

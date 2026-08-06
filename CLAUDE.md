@@ -112,22 +112,32 @@ regístralo y corre la suite completa antes y después.
 
 ## 5. Comandos
 
-> Pendientes de existir hasta que cierre la Fase 0. Cuando los crees, actualiza esta sección.
-
 ```bash
-uv sync                                  # instalar dependencias
-uv run python env/seed.py                # regenerar la DB de juguete (seed fija)
+# --- setup (una vez) ---
+uv sync --group dev --group test --group eval
+uv run pre-commit install
+cp .env.example .env                     # y rellenar OPENAI_API_KEY
 
+# --- calidad: correr SIEMPRE antes de dar por terminado un cambio ---
 uv run ruff check --fix . && uv run ruff format .
-uv run mypy --strict src/
+uv run mypy src/ scripts/
+uv run pytest -m "not llm" -q            # deterministas, sin LLM, sin coste
 
-uv run pytest tests/ -x -q               # tests deterministas (sin LLM) — rápido
-uv run pytest tests/test_agent_security.py -v
-uv run pytest -m "not llm"               # excluir todo lo que llame a un modelo real
+# --- diagnóstico del proveedor (Fase 0; ya ejecutado) ---
+uv run python -m scripts.spike_llm                    # lista modelos + versiones
+uv run python -m scripts.spike_llm --model <id>       # prueba tool-calling y params
 
-uv run python -m eval.runners --k 3      # suite de evals (LLM real, cuesta dinero y tiempo)
+# --- entorno simulado (Fase 1) ---
+uv run python -m env.seed                # regenerar la DB (Faker con seed fija)
+
+# --- evaluación (Fase 3+) — LLM real: CUESTA DINERO, avisa antes ---
+uv run pytest -m llm -q                  # tests que llaman al modelo
+uv run python -m eval.runners --k 3      # suite completa, K corridas por ticket
 uv run python -m eval.report             # regenerar EVALUATION_REPORT.md
 ```
+
+**DEBES** ejecutar el bloque de calidad antes de dar por terminado cualquier cambio.
+**NO** ejecutes nada de `eval/` ni `-m llm` sin avisar: consume presupuesto de API.
 
 **DEBES** ejecutar `ruff`, `mypy` y `pytest -m "not llm"` antes de dar por terminado cualquier cambio.
 **NO** ejecutes la suite de evals con LLM real sin avisar: consume presupuesto de Bedrock.

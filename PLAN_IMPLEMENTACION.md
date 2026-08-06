@@ -654,6 +654,7 @@ promptfoo redteam + PyRIT. No bloquea merge (los resultados requieren juicio hum
 - [ ] Métrica `trajectory_stability`
 - [ ] `tests/test_agent_quality.py`: umbrales pass/fail
 - [ ] Dataset del golden set subido a **LangSmith Datasets**; primer experimento como baseline
+- [ ] **Comparación de tiers de modelo** (`D-015`): correr el golden set contra 2–3 tiers (mini / flagship / pro) y producir una **tabla coste-calidad-latencia**. La elección de modelo pasa de intuición a medición, y es un entregable que el spec no pedía. Ojo al acoplamiento: si el agente sube de tier, el juez debe subir también para seguir cumpliendo D-002
 - [ ] **Loop de tuning**: mide → falla → arregla prompt/grafo → re-mide. Documenta cada iteración
 
 **Salida:** las 4 métricas corriendo, con baseline y ≥ 3 iteraciones de tuning documentadas (el *antes/después* es la mitad del valor del informe).

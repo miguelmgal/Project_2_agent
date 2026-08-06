@@ -124,6 +124,65 @@ Confirmado vigente en lo esencial. Tres actualizaciones y tres correcciones de d
 
 ---
 
+## 2026-08-06 — Día 2 · Fase 0 · Andamiaje y spike de integración ✅ FASE CERRADA
+
+**Tiempo invertido:** ~3h
+**Objetivo de la sesión:** montar la base de ingeniería y ejecutar el spike que desbloquea la Fase 1.
+
+### Cambio de proveedor: OpenAI en lugar de Bedrock
+
+No hay acceso a Bedrock todavía. Se evaluó el impacto y resulta ser **~5% del proyecto**: un archivo (`llm.py`) y el `.env`. El grafo, las tools, el golden set, las 4 métricas, `agentevals`, DeepEval, los tests de seguridad y el CI son **agnósticos al proveedor**.
+
+Decisión: **capa de modelo intercambiable** (`D-011`) en lugar de acoplarse a un proveedor. Coste cero y habilita un entregable que el spec no pedía: correr la misma suite contra dos proveedores y comparar métricas (*model-swap regression testing*).
+
+⚠️ **Pendiente de confirmar con quien asignó el proyecto:** el spec justifica Bedrock con "aprendes Bedrock", que es un objetivo de aprendizaje explícito. Hay que saber si era requisito duro o camino sugerido.
+
+### Hecho
+- `pyproject.toml`: dependencias en grupos (principal/dev/test/eval) + extra `bedrock` preparado sin instalar. Ruff con reglas `S` (bandit), `ANN` y `T20`. Mypy `strict`.
+- **Python fijado en 3.12** aunque la máquina tiene 3.14 (`D-013`).
+- Marca de pytest `llm` → habilita el CI de dos niveles vía `pytest -m "not llm"`.
+- `src/supportops/config.py`: `pydantic-settings` con `SecretStr`, `frozen=True` y validación *fail-fast*.
+- `src/supportops/llm.py`: único archivo que conoce el proveedor; exhaustividad verificada por mypy con `assert_never`.
+- `scripts/spike_llm.py`: diagnóstico de integración.
+- `tests/test_config.py`: 11 tests deterministas, dos de seguridad.
+- Identidad de git corregida a la cuenta `miguelmgal` (`D-014`); historia reescrita con mensajes en inglés y sin trailers de IA.
+
+### Resultados del spike
+
+| Modelo | Tool-calling | `temperature` | `seed` |
+|---|---|---|---|
+| `gpt-5.4-mini-2026-03-17` | ✅ | ✅ aceptado | ✅ aceptado |
+| `gpt-5.5-2026-04-23` | ✅ | ✅ aceptado | ✅ aceptado |
+| `gpt-5.5-pro-2026-04-23` | ✅ | ✅ aceptado | ❌ **rechazado** |
+
+Los tres extrajeron `ORD-1042` del lenguaje natural y **ninguno inventó `customer_id`** (no está en el schema → no puede rellenarlo). Primera validación empírica de R1.
+
+### Problemas encontrados
+- **[P-001]** ✅ **CERRADO** — `temperature` **sí** se acepta en OpenAI. Era específico de Claude 5, no universal.
+- **[P-004]** 🟢 **RESUELTO** — el `.env` no lo ve el SDK de OpenAI (`os.environ` ≠ archivo `.env`).
+- **[P-005]** 🟡 **DOCUMENTADO** — los modelos `pro` van por la **Responses API**, no por Chat Completions.
+- **[P-006]** 🟢 **RESUELTO** — la consola de Windows (cp1252) destroza caracteres no-ASCII.
+
+### Decisiones tomadas
+- **[D-011]** Capa de modelo agnóstica al proveedor.
+- **[D-012]** Canary build para medir intentos de acceso cruzado.
+- **[D-013]** Python 3.12, no 3.14.
+- **[D-014]** Identidad de git local al repo, sin tocar la global.
+- **[D-015]** Modelos **provisionales**; la elección definitiva se mide en Fase 3.
+- **[D-016]** R4 (sin `temperature`) se mantiene aunque OpenAI la acepte.
+
+### Aprendizajes
+- **Hacer el spike primero cambió una premisa del plan.** El plan daba por hecho que `temperature` estaba bloqueada y construía toda la metodología estadística sobre eso. Es falso en OpenAI. La metodología estadística sigue siendo correcta, pero **por otra razón** (ver D-016). Si hubiera dado la suposición por buena, habría documentado un *por qué* equivocado — y en una review, un razonamiento correcto con premisa falsa se cae al primer empujón.
+- **Un mensaje de error puede revelar arquitectura.** El fallo del modelo `pro` no fue "seed no soportado" sino `Responses.create() got an unexpected keyword argument 'seed'`. Ese nombre de función delata que hay **dos superficies de API distintas** por debajo, según el tier del modelo. Leer el error literal en vez de solo su categoría es lo que convirtió un "no funciona" en información arquitectónica.
+- **Elegir modelo por intuición desperdicia el propio proyecto.** La pregunta "¿qué modelo uso?" es exactamente lo que la suite de evaluación responde. Decidirlo a ojo ahora y no medirlo en Fase 3 sería tener el instrumento y no usarlo. De ahí `D-015`.
+- **Un alias flotante es una regresión invisible esperando.** `gpt-5.4-mini` puede reapuntar a otro modelo sin que ningún commit tuyo lo explique, y tus métricas cambian solas. Por eso se fija el **snapshot fechado**.
+- **El coste de un cambio no es el coste de su código.** Añadir `temperature` son 8 líneas; el gasto real es **rehacer el baseline** y perder la comparabilidad del histórico. Igual que cambiar el prompt o el gold set.
+
+### Siguiente paso
+- **Fase 1:** entorno simulado (`schema.sql`, `seed.py`), repositorio con filtro obligatorio de cliente, las 5 tools, artículos de FAQ y el golden set de 40 tickets.
+
+---
+
 <!-- ▲ Añade las nuevas entradas ARRIBA de esta línea, en orden cronológico inverso o directo (elige uno y sé consistente). Recomendado: orden directo, más natural para replicar. -->
 
 ---
@@ -137,10 +196,25 @@ Confirmado vigente en lo esencial. Tres actualizaciones y tres correcciones de d
 
 ### [P-001] Claude 5 rechaza parámetros de sampling (`temperature`, `top_p`, `top_k`)
 
-**Estado:** ⚪ anticipado — verificar en spike Día 1
+**Estado:** 🟢 **CERRADO 2026-08-06** — verificado en el spike: **no aplica a OpenAI**
 **Fase:** 0 · **Componente:** `agent/llm.py`, integración Bedrock
 
-**Síntoma esperado**
+> **Resultado de la verificación:** los tres modelos de OpenAI probados
+> (`gpt-5.4-mini-2026-03-17`, `gpt-5.5-2026-04-23`, `gpt-5.5-pro-2026-04-23`)
+> **aceptan `temperature`**. El bloqueo es específico de Claude 5 / Opus 4.7+ y sigue
+> siendo válido para la futura migración a Bedrock.
+>
+> **Aun así no usamos `temperature` (`D-016`)**, por dos razones que sobreviven al
+> cambio de proveedor: (1) mantiene el código portable a Bedrock, y (2) fijarla
+> ocultaría el no-determinismo que la suite está diseñada para medir — la métrica de
+> estabilidad de trayectoria daría ~1.0 siempre, un número bonito y vacío.
+>
+> **Lección:** el plan original construía toda la metodología estadística sobre la
+> premisa de que `temperature` estaba bloqueada. La premisa era falsa en OpenAI; la
+> metodología sigue siendo correcta pero por otro motivo. Un razonamiento correcto
+> con premisa falsa se cae en la primera review.
+
+**Síntoma esperado (en Bedrock/Claude)**
 ```
 botocore.errorfactory.ValidationException: An error occurred (ValidationException)
 when calling the Converse operation: <parámetro> is not supported by this model
@@ -211,6 +285,106 @@ La imposibilidad de fijar `temperature` convirtió un problema de configuración
 
 ---
 
+### [P-004] El archivo `.env` no lo ve el SDK del proveedor
+
+**Estado:** 🟢 resuelto
+**Fase:** 0 · **Componente:** `scripts/spike_llm.py`
+
+**Síntoma**
+```
+openai.AuthenticationError: Error code: 401 - Incorrect API key provided
+```
+…con la key perfectamente escrita en `.env`. Es el error que más tiempo hace perder,
+porque todo *parece* correcto y sospechas de la key en lugar del mecanismo de carga.
+
+**Causa raíz**
+**Un archivo `.env` no es una variable de entorno.** Es texto en disco; alguien tiene
+que leerlo y cargarlo. En este proyecto conviven dos formas de acceder a credenciales:
+
+| Componente | Lee de | ¿Ve el `.env`? |
+|---|---|---|
+| `Settings` (pydantic-settings) | `.env` + `os.environ` | ✅ configurado con `env_file=` |
+| `OpenAI()` / `ChatOpenAI()` sin argumentos | solo `os.environ` | ❌ |
+
+**Solución**
+No `load_dotenv()`, sino **usar la capa de configuración del propio proyecto** y pasar
+la key explícitamente:
+
+```python
+def _api_key() -> str:
+    key = get_settings().openai_api_key
+    if key is None:
+        raise ValueError("OPENAI_API_KEY is not configured.")
+    return key.get_secret_value()
+
+client = OpenAI(api_key=_api_key())
+```
+
+**Por qué esta solución y no `load_dotenv()`:** con `load_dotenv()` tendrías **dos**
+caminos distintos para leer secretos en el mismo proyecto, y tarde o temprano
+divergen (uno valida, el otro no). Pasando por `Settings` hay un solo camino, y de
+paso el spike ejercita el código de configuración real.
+
+**Cómo evitarlo al replicar**
+Regla general: **una sola vía de acceso a secretos en todo el proyecto.** Si un
+componente de terceros no la usa, pásale el valor explícitamente en lugar de esperar
+que adivine.
+
+---
+
+### [P-005] Los modelos `pro` usan otra API: la Responses API
+
+**Estado:** 🟡 documentado (no bloquea, pero condiciona la elección del juez)
+**Fase:** 0 · **Componente:** `llm.py`, evaluación
+
+**Síntoma**
+```
+TypeError: Responses.create() got an unexpected keyword argument 'seed'
+```
+Solo con `gpt-5.5-pro-2026-04-23`. Los tiers `mini` y estándar aceptan `seed` sin más.
+
+**Causa raíz**
+Fíjate en el nombre de la función del error: **`Responses.create()`**, no
+`Completions.create()`. `langchain-openai` enruta los modelos `pro` por la
+**Responses API** en lugar de Chat Completions. Son **dos superficies de API
+distintas**, con parámetros distintos.
+
+**Implicación de diseño**
+Elegir el modelo del juez no es solo elegir capacidad: es elegir **ruta de API**. Un
+parámetro que funciona en el agente puede no existir en el juez. Es una razón
+adicional (además del coste) para que el juez sea `gpt-5.5-2026-04-23` y no el `pro`.
+
+**Cómo evitarlo al replicar**
+No asumas que todos los modelos de un proveedor comparten superficie de API. Prueba
+los parámetros **por modelo**, no por proveedor. El spike lo hace por eso.
+
+---
+
+### [P-006] La consola de Windows destroza caracteres no-ASCII
+
+**Estado:** 🟢 resuelto
+**Fase:** 0 · **Componente:** salida de consola de scripts
+
+**Síntoma**
+```
+  in place (see PLAN_IMPLEMENTACION.md �6.4).
+```
+
+**Causa raíz**
+La consola de Windows usa **cp1252** por defecto, no UTF-8, y no puede representar
+caracteres como `§`, `→` o `✅`.
+
+**Solución**
+**ASCII puro en toda la salida de consola.** Se podría forzar UTF-8 en la consola,
+pero eso depende del entorno de quien ejecuta — y un diagnóstico ilegible en la
+máquina de otro es un diagnóstico inútil.
+
+**Cómo evitarlo al replicar**
+Los `.md` sí pueden llevar Unicode (los renderiza GitHub). Lo que se imprime en una
+terminal, no.
+
+---
+
 ### [P-XXX] (plantilla — copia esta estructura)
 
 **Estado:** 🔴 abierto
@@ -250,6 +424,12 @@ La imposibilidad de fijar `temperature` convirtió un problema de configuración
 | **D-008** | LangSmith como backend primario, instrumentado vía OTel | Solo LangSmith nativo; Langfuse self-hosted; Laminar | LangSmith es coste cero con LangGraph y su vista de trayectorias es la mejor. Instrumentar con OTel (que LangSmith ya ingiere) hace la telemetría portable: cambiar de backend luego es cambiar un exporter | 2026-07-31 | ✅ Vigente |
 | **D-009** | `.gitattributes` con `* text=auto eol=lf` desde el primer commit | No normalizar (dejar CRLF nativo de Windows) | Se desarrolla en Windows y CI corre en Linux. Sin normalizar, cada archivo aparece como modificado por completo en CI y los diffs se vuelven inservibles para revisión | 2026-08-05 | ✅ Vigente |
 | **D-010** | La DB de juguete **no** se versiona | Commitear el `.db` para garantizar dataset idéntico | Con `Faker.seed()` fija, `env/seed.py` reproduce byte a byte el mismo dataset. Versionar un binario que se regenera añade ruido al diff sin aportar reproducibilidad. **Depende de que la seed nunca se toque sin registrarlo aquí** | 2026-08-05 | ✅ Vigente |
+| **D-011** | Capa de modelo **agnóstica al proveedor** (`llm.py` es el único archivo que lo sabe) | Acoplarse a OpenAI ahora y refactorizar cuando llegue Bedrock | Cuesta lo mismo escribirlo bien desde el principio. Migrar pasa a ser una variable de entorno, y habilita *model-swap regression testing*: la misma suite contra dos proveedores | 2026-08-06 | ✅ Vigente |
+| **D-012** | **Canary build** (`INSECURE_CANARY`) que expone `customer_id` al LLM, solo para red teaming | Solo el diseño seguro; solo el vulnerable | El diseño seguro hace la fuga *imposible*, pero también **imposible de medir**. El canary da un número ("el N% de los ataques lo intenta") en lugar de solo "lo hicimos imposible" | 2026-08-06 | ✅ Vigente |
+| **D-013** | **Python 3.12**, no la 3.14 instalada | Usar la última versión disponible | El ecosistema de IA tarda meses en publicar wheels para versiones nuevas; `deepeval`/`langgraph` arrastran dependencias compiladas. En proyectos de IA la versión de Python es una decisión de compatibilidad, no de novedad | 2026-08-06 | ✅ Vigente |
+| **D-014** | Identidad de git **local al repo** (`miguelmgal`), sin tocar la global | Cambiar la config global | La global es una identidad corporativa de otra empresa. Local evita mezclar identidades y commitear trabajo personal con email de trabajo. Se usa el email `noreply` de GitHub: siempre vincula a la cuenta y no expone el email personal en la historia pública | 2026-08-06 | ✅ Vigente |
+| **D-015** | Modelos **provisionales**: `gpt-5.4-mini-2026-03-17` (agente) + `gpt-5.5-2026-04-23` (juez). Elección definitiva **medida en Fase 3** | Decidir ahora por intuición; usar el tier más alto por precaución | La pregunta "¿qué modelo?" es exactamente lo que responde la suite de evaluación. Decidirlo a ojo desperdicia el instrumento. Se itera en el tier barato (Fases 1–2, cientos de ejecuciones depurando) y en Fase 3 se compara con datos → **tabla coste/calidad como entregable extra**. Snapshots fechados, nunca alias flotantes | 2026-08-06 | 🔶 Provisional |
+| **D-016** | **Sin `temperature`** aunque OpenAI la acepte | Usarla ya que está disponible; usarla solo en el juez | Dos razones que sobreviven al cambio de proveedor: portabilidad a Bedrock, y **fijarla ocultaría el no-determinismo que la suite mide** (la estabilidad de trayectoria daría ~1.0 siempre). En vez de asumir que el juez es estable, se **mide** su auto-consistencia en la calibración | 2026-08-06 | ✅ Vigente |
 
 ---
 
@@ -271,21 +451,33 @@ La imposibilidad de fijar `temperature` convirtió un problema de configuración
 
 > Rellenar tras el spike del Día 1. **Sin esto, el proyecto no es reproducible.**
 
+**Verificado el 2026-08-06** con `uv run python -m scripts.spike_llm`.
+
 | Componente | Versión | Notas |
 |---|---|---|
-| Python | | |
-| uv | | |
-| langgraph | | |
-| langchain-core | | |
-| langchain-aws | | ⚠️ crítica — ver P-002 |
-| boto3 / botocore | | |
-| agentevals | | |
-| deepeval | | |
-| langsmith | | |
-| pydantic | | |
-| Región de Bedrock | | ⚠️ la disponibilidad de modelos varía por región |
-| Model ID (agente) | `anthropic.claude-sonnet-5` | |
-| Model ID (juez) | `anthropic.claude-opus-5` | |
+| Python | **3.12.10** | Fijado en `.python-version`. NO usar 3.14 (D-013) |
+| uv | 0.11.31 | |
+| langgraph | 1.2.10 | |
+| langchain | 1.3.14 | |
+| langchain-core | 1.5.3 | |
+| langchain-openai | 1.4.1 | |
+| openai | 2.53.0 | |
+| pydantic | 2.13.4 | |
+| langsmith | 0.10.16 | |
+| agentevals | 0.0.9 | |
+| deepeval | 4.1.5 | |
+| faker | 40.36.0 | |
+| ruff | 0.16.1 | |
+| **Proveedor** | **OpenAI** | `LLM_PROVIDER=openai`. Bedrock pendiente de acceso |
+| Model ID (agente) | `gpt-5.4-mini-2026-03-17` | 🔶 provisional (D-015) |
+| Model ID (juez) | `gpt-5.5-2026-04-23` | 🔶 provisional (D-015). NO el `pro`: otra API (P-005) |
+
+> **Snapshots fechados, no alias.** `gpt-5.4-mini` puede reapuntar a otro modelo sin
+> que ningún commit lo explique, y las métricas cambian solas. El sufijo de fecha es
+> lo que hace comparable el histórico.
+
+**Pendiente para cuando llegue Bedrock:** `langchain-aws`, `boto3`/`botocore`, región,
+y verificar `P-002` (thinking adaptativo y `tool_choice`), que sigue sin comprobar.
 
 ---
 
