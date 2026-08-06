@@ -42,9 +42,10 @@ Estas cinco reglas protegen las propiedades que hacen válido el proyecto. Viola
 
 ```python
 # ✅ CORRECTO — el LLM no ve customer_id en el schema
-@tool(args_schema=GetOrderStatusArgs)          # args_schema SOLO tiene order_id
+@tool(args_schema=GetOrderStatusArgs)  # args_schema SOLO tiene order_id
 def get_order_status(order_id: str) -> OrderStatus:
     return repo.get_order(order_id=order_id, customer_id=authenticated_customer_id)
+
 
 # ❌ PROHIBIDO — el LLM rellena customer_id → inyección de prompt = fuga de datos
 def get_order_status(customer_id: str, order_id: str) -> OrderStatus: ...
@@ -141,8 +142,33 @@ uv run python -m eval.report             # regenerar EVALUATION_REPORT.md
 - **Sin lógica de negocio en los prompts.** Las reglas duras (límites, autorización, cortes de bucle) van en código.
 - **Sin SQL fuera de `db/repository.py`.** Las tools llaman al repositorio; no construyen queries.
 - **Errores explícitos.** Una tool que falla devuelve un resultado de error tipado, no `None` ni una cadena vacía; el agente debe poder razonar sobre el fallo.
-- Nombres y comentarios: **español en documentación, inglés en código** (identificadores, docstrings). Sé consistente con el código existente.
+- **Idioma — regla estricta, sin excepciones:**
+
+  | Dónde | Idioma |
+  |---|---|
+  | Identificadores, nombres de función y de variable | 🇬🇧 inglés |
+  | **Comentarios** | 🇬🇧 inglés |
+  | **Docstrings** | 🇬🇧 inglés |
+  | Mensajes de error y de excepción | 🇬🇧 inglés |
+  | Salida de consola de scripts | 🇬🇧 inglés |
+  | Nombres de tests (`test_...`) | 🇬🇧 inglés |
+  | **Mensajes de commit** (asunto y cuerpo) | 🇬🇧 inglés |
+  | Nombres de rama, títulos y descripciones de PR | 🇬🇧 inglés |
+  | Documentación `.md` (README, plan, bitácora, este archivo) | 🇪🇸 español |
+  | Contenido del dominio simulado (artículos de FAQ, tickets del golden set) | 🇪🇸 español |
+
+  Los dos últimos son deliberados: la documentación la lee el equipo, y el dominio
+  simulado representa a clientes hispanohablantes. **Todo lo que vive dentro de un
+  archivo `.py` va en inglés.** Si encuentras código que incumpla esto, corrígelo.
+
 - **Comenta solo lo que el código no puede decir por sí mismo** (una restricción, un porqué no obvio). No narres la línea siguiente.
+
+### Convenciones de commit
+
+- **Conventional Commits** en inglés: `feat:`, `fix:`, `docs:`, `test:`, `build:`, `ci:`, `refactor:`, `style:`, `chore:`.
+- Asunto en **imperativo**, ≤ 72 caracteres, sin punto final.
+- El cuerpo explica **por qué**, no qué (el diff ya dice qué). Referencia los IDs de la bitácora (`D-003`, `P-001`) cuando aplique.
+- **Sin trailers de co-autoría de herramientas de IA.**
 
 ---
 

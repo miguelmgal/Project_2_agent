@@ -1,0 +1,126 @@
+[project]
+name = "supportops-agent"
+version = "0.1.0"
+description = "Agente autónomo de soporte al cliente con LangGraph y evaluación de trayectorias"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+
+dependencies = [
+    # --- Orquestación ---
+    "langgraph>=1.0",
+    "langchain>=1.0",
+    "langchain-core>=1.0",
+    # --- Proveedor de LLM (ver src/supportops/llm.py: capa agnóstica) ---
+    "langchain-openai>=0.3",
+    "openai>=1.60",
+    # --- Contratos y configuración ---
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # --- Entorno simulado ---
+    "faker>=30.0",
+    # --- Observabilidad ---
+    "langsmith>=0.2",
+]
+
+[project.optional-dependencies]
+# Se instala solo cuando haya acceso a Bedrock: `uv sync --extra bedrock`
+bedrock = ["langchain-aws>=0.2"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pre-commit>=4.0",
+]
+test = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "pytest-xdist>=3.6",
+]
+eval = [
+    "agentevals>=0.0.7",
+    "deepeval>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/supportops"]
+
+# ---------------------------------------------------------------------------
+# Ruff — lint + format (reemplaza flake8 + black + isort + pyupgrade)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "eval", "env"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",      # pycodestyle
+    "F",           # pyflakes
+    "I",           # isort
+    "N",           # pep8-naming
+    "UP",          # pyupgrade
+    "B",           # flake8-bugbear
+    "A",           # flake8-builtins
+    "C4",          # comprehensions
+    "SIM",         # simplify
+    "PTH",         # usar pathlib
+    "RUF",         # reglas de ruff
+    "S",           # bandit (seguridad)
+    "ANN",         # anotaciones de tipo obligatorias
+    "ASYNC",
+    "T20",         # prohibido print() en src/
+]
+ignore = [
+    "ANN401",      # permitir Any explícito cuando está justificado
+    "S101",        # assert permitido (pytest lo usa)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Los scripts de utilidad y evaluación sí pueden imprimir a consola.
+"env/*" = ["T20"]
+"eval/*" = ["T20"]
+"scripts/*" = ["T20"]
+"tests/*" = ["ANN", "S105", "S106"]
+
+# ---------------------------------------------------------------------------
+# Mypy — tipado estricto (los contratos de las tools son superficie de seguridad)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+show_error_codes = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Librerías sin stubs completos, o extras no instalados por defecto
+# (`langchain_aws` solo existe con `uv sync --extra bedrock`).
+module = ["deepeval.*", "agentevals.*", "faker.*", "langchain_aws.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    # CLAUDE.md §7: todo test que llame a un modelo real DEBE llevar esta marca.
+    # Permite excluirlos en CI de PR con `pytest -m "not llm"`.
+    "llm: requiere un LLM real (cuesta dinero, no determinista, no corre en PR)",
+    "eval: forma parte de la suite de evaluación (lento)",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/supportops"]
+branch = true
+
+[tool.coverage.report]
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]

@@ -59,8 +59,8 @@ Esto te da además una métrica gratis y muy vendible: **estabilidad de trayecto
 El spec, sección 6, define:
 
 ```python
-get_order_status(customer_id, order_id)   # ❌ el LLM rellena customer_id
-lookup_customer(email)                    # ❌ el LLM rellena email
+get_order_status(customer_id, order_id)  # ❌ el LLM rellena customer_id
+lookup_customer(email)  # ❌ el LLM rellena email
 ```
 
 Y en la sección 8 pide un test de "acceso cruzado". El problema: **si el LLM controla el parámetro de identidad, el test de seguridad prueba el prompt, no el sistema.** Cualquier jailbreak suficientemente bueno lo rompe, y siempre acabará apareciendo uno.
@@ -73,7 +73,7 @@ def build_tools(authenticated_customer_id: str) -> list[BaseTool]:
     """Las tools se construyen POR SESIÓN, ligadas a la identidad ya verificada.
     El LLM nunca ve `customer_id` en el schema → no puede inventárselo."""
 
-    @tool(args_schema=GetOrderStatusArgs)   # args_schema SOLO tiene order_id
+    @tool(args_schema=GetOrderStatusArgs)  # args_schema SOLO tiene order_id
     def get_order_status(order_id: str) -> OrderStatus:
         return db.get_order(order_id=order_id, customer_id=authenticated_customer_id)
 
@@ -274,6 +274,7 @@ from typing_extensions import TypedDict
 
 TicketStatus = Literal["open", "awaiting_user", "resolved", "escalated", "failed"]
 
+
 class SupportState(TypedDict):
     # --- Entrada ---
     ticket_id: str
@@ -287,8 +288,8 @@ class SupportState(TypedDict):
     messages: Annotated[list, add_messages]
 
     # --- Auditoría / evaluación ---
-    tool_calls_made: list[str]      # secuencia ordenada → es LA trayectoria
-    step_count: int                 # eficiencia + corte de bucles
+    tool_calls_made: list[str]  # secuencia ordenada → es LA trayectoria
+    step_count: int  # eficiencia + corte de bucles
 
     # --- Resolución ---
     status: TicketStatus
@@ -448,7 +449,7 @@ Usar `strict` en todo produce falsos rojos que erosionan la confianza en la suit
 from deepeval.metrics import ToolCorrectnessMetric
 from deepeval.test_case import LLMTestCase, ToolCall
 
-metric = ToolCorrectnessMetric(threshold=0.90)   # determinista, sin LLM
+metric = ToolCorrectnessMetric(threshold=0.90)  # determinista, sin LLM
 ```
 
 Determinista y baratísima: compara herramientas llamadas vs. esperadas. Reporta también **precisión de tool-selection** (¿llamó tools innecesarias?) — la métrica que revela al agente que resuelve bien "a fuerza bruta".
@@ -505,7 +506,7 @@ Coste: media hora. Valor: puedes decir *"mi juez tiene kappa 0.78 contra etiquet
 ### 6.4 No-determinismo: el protocolo de medición
 
 ```python
-K_RUNS = 3   # por ticket
+K_RUNS = 3  # por ticket
 
 # Se reporta, por métrica:
 #   - media entre corridas          → el número que va al gate
