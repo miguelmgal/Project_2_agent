@@ -183,6 +183,43 @@ Los tres extrajeron `ORD-1042` del lenguaje natural y **ninguno inventó `custom
 
 ---
 
+## 2026-08-07 — Día 3 · Fase 1 · Esquema, generación de datos y anclas
+
+**Tiempo invertido:** ~4h
+**Objetivo de la sesión:** construir el entorno simulado (piezas 1 y 2 de 6 de la Fase 1).
+
+### Hecho
+- **`env/schema.sql`**: 4 tablas + índice FTS5 con triggers. `STRICT`, dinero en enteros, timestamps ISO-8601 validados por `GLOB`, FK con `ON DELETE RESTRICT`, e **invariantes de negocio** como `CHECK` compuestos.
+- **`src/supportops/db/connection.py`**: conexión centralizada; único sitio que activa `PRAGMA foreign_keys`.
+- **`env/anchors.py`** + **`env/seed.py`**: anclas escritas a mano + relleno con Faker, con rangos de ID no solapables y **auto-comprobación** al generar.
+- **70 tests** (41 de esquema, 18 de seed, 11 de config), mypy estricto limpio.
+- Dataset: **30 clientes, 100 pedidos**, 9 anclas cubriendo los 7 estados.
+
+### Problemas encontrados
+- **[P-007]** 🟢 `git push` rechazado con 403 pese a que `gh` estaba autenticado como `miguelmgal` → ver registro.
+- **Parser de enums frágil**: `allowed_check_values` buscaba texto literal y falló por los espacios de alineación del esquema. Reescrito con regex tolerante + balanceo de paréntesis. El detalle no obvio: el patrón exige `IN` inmediatamente después del nombre de columna, de modo que **no** captura los `status NOT IN (...)` de los invariantes de negocio — que es justo lo que hay que evitar.
+- **`conftest.py` no era importable**: los constructores de filas se movieron a `tests/builders.py`. El arreglo rápido era añadir `__init__.py` y seguir; se aprovechó para separar bien — **conftest es inyección de dependencias, no una biblioteca de utilidades**.
+
+### Decisiones tomadas
+- **[D-021]** Anclas a mano + relleno generado, con rangos de ID no solapables.
+- **[D-022]** **Reloj congelado**: `REFERENCE_DATE` fija, nunca `datetime.now()`.
+- **[D-023]** El apóstrofe se escribe como ancla deliberada, no se espera del locale.
+- **[D-024]** Hypothesis para probar el aislamiento por cliente como propiedad universal.
+
+### Aprendizajes
+- **Un esquema restrictivo no es limpieza, es interpretabilidad.** Si un pedido incoherente **no puede existir**, entonces una respuesta mala del agente es culpa del agente y no de un dato corrupto. Sin esa garantía, cada métrica que baje en Fase 3 abre una investigación de dos horas: *"¿razonó mal, o el dato estaba roto?"*.
+- **El invariante más valioso protege una métrica, no un dato.** `escalation_category` es obligatoria cuando `escalated=1` porque una escalación sin categoría es una **escalación imposible de medir**. La restricción defiende la capacidad de medir.
+- **El test más importante del esquema parece trivial**: `assert foreign_keys_enabled(db)`. SQLite las desactiva por defecto y **por conexión**; si eso regresa, nada falla ruidosamente y toda la garantía estructural de R1 desaparece en silencio.
+- **Un pedido entregado no puede ir "20 días tarde".** Salió como bug de visualización y reveló un **requisito de la tool**: el retraso solo aplica a estados no terminales. Una respuesta absurda construida sobre datos correctos es el bug más difícil de atribuir.
+- **Verifiqué una afirmación mía y era falsa.** Justifiqué el relleno con el fuzzing accidental de Faker citando un apellido con apóstrofe; al medir, el locale `es_ES` produce **cero apóstrofes**. Lo que sí aporta son tildes y compuestos. Conclusión generalizable: **no se debe esperar que un locale produzca input hostil por casualidad** — si importa, se escribe a propósito (`D-023`).
+- **La aritmética de los totales no la vigilaba nadie.** El dataset salió con 93 pedidos en vez de ~100 porque dimensioné el relleno para ~15 anclas y quedaron 8. Ahora hay un test que afirma los totales.
+- **Una auto-comprobación nunca vista fallar es decoración.** De ahí los 5 tests que la rompen a propósito.
+
+### Siguiente paso
+- **Pieza 3:** `db/repository.py` con filtro de cliente obligatorio + tests de propiedad con Hypothesis.
+
+---
+
 <!-- ▲ Añade las nuevas entradas ARRIBA de esta línea, en orden cronológico inverso o directo (elige uno y sé consistente). Recomendado: orden directo, más natural para replicar. -->
 
 ---
@@ -386,6 +423,65 @@ terminal, no.
 
 ---
 
+### [P-007] `git push` rechazado con 403 aunque `gh` está autenticado correctamente
+
+**Estado:** 🟢 resuelto
+**Fase:** 1 · **Componente:** entorno / control de versiones
+
+**Síntoma**
+```
+remote: Permission to miguelmgal/Project_2_agent.git denied to daguilarma.
+fatal: unable to access 'https://github.com/miguelmgal/Project_2_agent.git/':
+       The requested URL returned error: 403
+```
+Desconcertante porque `gh auth status` reportaba `Logged in to github.com account miguelmgal`
+y los commits ya salían firmados como Miguel Madrigal.
+
+**Causa raíz**
+**`gh` y `git` usan credenciales distintas.** Hay dos cuentas de GitHub en la máquina y
+cada herramienta cogía una:
+
+| Herramienta | Cuenta | De dónde |
+|---|---|---|
+| `gh` CLI | `miguelmgal` | PAT en el keyring |
+| `git push` | `daguilarma` | **Git Credential Manager** de Windows |
+
+Y hay una segunda confusión encima: **autoría no es lo mismo que permiso**.
+`user.name`/`user.email` deciden qué nombre aparece en el commit; el credential helper
+decide **quién tiene permiso de escritura**. La autoría estaba bien desde el principio;
+lo que fallaba era el permiso.
+
+**Solución**
+Apuntar el credential helper al token de `gh`, **solo en este repositorio**:
+
+```bash
+git config --local --replace-all credential.helper ""
+git config --local --add credential.helper "!gh auth git-credential"
+```
+
+La cadena vacía **resetea** la lista heredada (`credential.helper` es multivalor y
+`manager` viene de la config de **sistema** de Git para Windows); la segunda línea
+añade el de `gh`.
+
+**Por qué NO `gh auth setup-git`:** modifica la config **global** y dejaría sin acceso
+a los repos de trabajo que sí necesitan la otra cuenta. Local al repo: en este proyecto
+eres Miguel, en el resto sigues siendo quien eras.
+
+**Verificación** — no basta con leer el nombre del commit; hay que preguntar al servidor
+si lo **vinculó** a la cuenta:
+```bash
+gh api repos/OWNER/REPO/commits --jq '.[0].author.login'
+```
+`commit.author.name` es texto libre; `author.login` es la vinculación real. Si el email
+no coincide con la cuenta sale `null`, el commit no cuenta en las contribuciones y
+aparece sin avatar.
+
+**Cómo evitarlo al replicar**
+Con dos cuentas de GitHub en la misma máquina, configura **siempre** identidad y
+credenciales a nivel de repositorio, nunca global.
+
+---
+
 ### [P-XXX] (plantilla — copia esta estructura)
 
 **Estado:** 🔴 abierto
@@ -435,6 +531,10 @@ terminal, no.
 | **D-018** | **`tier` (`standard`/`premium`) se incluye Y se expone al agente vía `lookup_customer`** | No incluirlo (alcance mínimo); incluirlo sin exponerlo | Habilita un caso de seguridad que ninguna otra columna habilita: el agente **sabe** que eres premium pero **no tiene ninguna tool** para dar trato preferente. Un agente flojo improvisa ("como cliente premium agilizo su envío") = promesa que la empresa no puede cumplir → **OWASP LLM08, Excessive Agency**. Es un fallo distinto y más sutil que prometer reembolsos: aquí el agente tiene información legítima y la usa para inventar una acción. **Matiz clave:** si ninguna tool devuelve el `tier`, el agente nunca lo ve y la columna está muerta — la decisión real no es "¿añado la columna?" sino "¿lo expongo?". Condiciones: documentado como trampa, no como funcionalidad, y **ninguna tool acepta `tier` como parámetro de decisión**. Coste: 1 columna + ~2 tickets del golden set + 1 test | 2026-08-07 | ✅ Vigente |
 | **D-019** | **Sin migraciones** (Alembic/Flyway). Esquema declarativo + base efímera: se recrea con `env/seed.py`, no se migra | Alembic desde el inicio "para que sea profesional" | Las migraciones existen para cambiar el esquema **sin perder los datos que ya hay dentro**. Aquí no hay datos que preservar: la base es un fixture desechable que se regenera en segundos y está en `.gitignore` (D-010). Añadir una herramienta que no resuelve un problema real es *cargo cult* — copiar la forma sin la función. Mismo patrón que la infraestructura inmutable: no parcheas el servidor, lo recreas desde su definición. **Fecha de caducidad de esta decisión:** si el proyecto acumula estado no regenerable (p. ej. memoria persistente del agente entre sesiones, uno de los stretch goals), las migraciones pasan a ser obligatorias y la herramienta es **Alembic** | 2026-08-07 | ✅ Vigente |
 | **D-020** | Tests de esquema **de invariante**, no de snapshot. Más un test futuro de **cobertura esquema ↔ golden set** | Snapshot del DDL; lista fija de enums en el test | Un test cuyo arreglo es "regenerar" se arregla por reflejo, sin leer el diff — detecta el cambio pero no protege nada, y falla ante cambios inofensivos (añadir una columna, reordenar), lo que entrena a la gente a ignorarlo. Un invariante roto **no se puede arreglar regenerando**: o restauras la restricción o borras el test, y borrar un test es visible en la revisión. Para el crecimiento del dominio, en lugar de fijar la lista de estados se derivará la **cobertura**: cada estado que el esquema permite debe tener ≥1 ticket del golden set que lo ejercite — así el arreglo no es "editar la lista" sino "escribir el caso de prueba". Los valores se leen del DDL (`allowed_check_values`), nunca duplicados en Python: dos copias derivan | 2026-08-07 | ✅ Vigente |
+| **D-021** | **Anclas a mano + relleno generado**, con rangos de ID no solapables (`CUST-0xxx`/`ORD-1xxx-4xxx` frente a `CUST-9xxx`/`ORD-5xxx`) | Todo aleatorio con Faker; todo escrito a mano | Todo aleatorio no garantiza que existan los casos a probar, y peor: al añadir un dato, Faker consume el azar en otro orden y **cambian todos los posteriores** — el pedido sobre el que escribiste un ticket pasa a tener otro estado, en silencio. Todo a mano pierde el input desordenado real (tildes, compuestos) y degenera en `Test User 1..100`. La regla: **toda fila que un test pueda alcanzar debe ser deliberada**; el relleno es inalcanzable por diseño. Precedente de la industria: `Seeders` + `Factories` de Laravel, `db/seeds.rb` + FactoryBot de Rails | 2026-08-07 | ✅ Vigente |
+| **D-022** | **Reloj congelado**: todas las fechas relativas a `REFERENCE_DATE`, nunca `datetime.now()` | Fechas relativas a la fecha real de ejecución | Con reloj real, `ORD-1001` pasa de "5 días de retraso" a "40" y `ORD-1003` **cruza de no-vencido a vencido** — convirtiendo un ticket etiquetado "resoluble, solo informar" en uno que describe a un cliente enfadado. **Nada falla**: la métrica baja y la investigación mira al agente en lugar de al calendario. Consecuencia de diseño para las tools: `get_order_status` devuelve el retraso **ya calculado**, porque los LLM son poco fiables en aritmética de fechas y no hay razón para hacer que el modelo derive lo que la tool puede afirmar | 2026-08-07 | ✅ Vigente |
+| **D-023** | Un nombre con **apóstrofe** (`Beatriz O'Donnell`) como ancla deliberada | Esperar que Faker lo genere; dejarlo solo a Hypothesis | **Medido:** el locale `es_ES` produce **cero** apóstrofes, así que confiar en el generador dejaba el caso sin cubrir. Una consulta construida por concatenación en lugar de parámetro vinculado se rompe en esa fila — y eso es un agujero de inyección SQL, no un detalle cosmético. **No sustituye a Hypothesis:** el ancla está siempre presente (cada corrida que toca nombres la ejercita), Hypothesis busca activamente un espacio mucho mayor. Presencia y búsqueda son coberturas distintas. Es apellido español auténtico, así que el dato no queda como injerto | 2026-08-07 | ✅ Vigente |
+| **D-024** | **Hypothesis** (property-based testing) para el aislamiento por cliente | Solo tests por ejemplo | Un test por ejemplo prueba *una* combinación; la propiedad que hay que garantizar es universal: *para cualquier cliente y cualquier pedido, la consulta lo devuelve solo si le pertenece*. Con 30x100 son 3.000 combinaciones en segundos, y el *shrinking* reduce el contraejemplo al mínimo legible. Cambia lo que puedes afirmar en una review: de *"no se filtra en los casos que se me ocurrieron"* a **"no se filtra en ninguna combinación"**. **No sustituye a los tests por ejemplo** — esos documentan casos concretos de negocio, legibles para cualquiera. Límites: **no** para comportamiento del LLM (no determinista y cada caso cuesta dinero) ni **nunca** para el golden set, que se cura a mano | 2026-08-07 | ✅ Vigente |
 
 ---
 
