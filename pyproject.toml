@@ -37,6 +37,10 @@ test = [
     "pytest-cov>=6.0",
     "pytest-asyncio>=0.24",
     "pytest-xdist>=3.6",
+    # Property-based testing (D-024). Used for the R1 isolation guarantee: an
+    # example test proves one combination, a property test proves there is no
+    # counterexample among thousands.
+    "hypothesis>=6.100",
 ]
 eval = [
     "agentevals>=0.0.7",

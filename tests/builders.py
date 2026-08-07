@@ -14,7 +14,7 @@ grab-bag that every test file imports from for unrelated reasons.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
     import sqlite3
@@ -116,3 +116,56 @@ def make_faq(db: sqlite3.Connection, **overrides: Any) -> int:
     )
     db.commit()
     return int(row["id"])
+
+
+# Synthetic articles for repository *mechanism* tests -- deliberately NOT the real
+# knowledge base.
+#
+# The distinction matters. A repository test asserting "searching X ranks the password
+# article first" would break the day someone rewrites that article for clarity: a test
+# of the mechanism (does the JOIN work? is the ranking ordered? is the BM25 sign right?)
+# broken by a change of content. That is the test coupled to the wrong thing.
+#
+# So mechanism is tested against these three, which never change; search *quality*
+# against the real articles is a Phase 3 concern, measured with the golden set.
+#
+# The vocabularies are disjoint on purpose. With overlapping wording a search could
+# return the right article by luck, and the test could not tell ranking from chance.
+MECHANISM_ARTICLES: Final = (
+    {
+        "id": 901,
+        "slug": "fixture-credentials",
+        "title": "Restablecer la contrasena de acceso",
+        "body": (
+            "Si no puedes entrar en tu cuenta, solicita un enlace de restablecimiento. "
+            "El enlace de contrasena caduca en treinta minutos."
+        ),
+        "category": "account",
+    },
+    {
+        "id": 902,
+        "slug": "fixture-delivery",
+        "title": "Plazos de entrega y transportistas",
+        "body": (
+            "Los paquetes salen del almacen en veinticuatro horas. El transportista "
+            "actualiza el seguimiento cada manana."
+        ),
+        "category": "shipping",
+    },
+    {
+        "id": 903,
+        "slug": "fixture-refunds",
+        "title": "Devoluciones y reembolsos",
+        "body": (
+            "Aceptamos devoluciones dentro de los catorce dias posteriores a la "
+            "recepcion. El reembolso se emite tras inspeccionar el articulo."
+        ),
+        "category": "returns",
+    },
+)
+
+
+def make_mechanism_faqs(db: sqlite3.Connection) -> None:
+    """Insert the three synthetic articles used by repository mechanism tests."""
+    for article in MECHANISM_ARTICLES:
+        make_faq(db, **article)
