@@ -49,7 +49,7 @@ something the tool can state as a fact.
 # ---------------------------------------------------------------------------
 
 ANCHOR_CUSTOMER_PREFIX: Final = "CUST-0"
-ANCHOR_ORDER_PREFIXES: Final = ("ORD-1", "ORD-2", "ORD-3")
+ANCHOR_ORDER_PREFIXES: Final = ("ORD-1", "ORD-2", "ORD-3", "ORD-4")
 FILLER_CUSTOMER_PREFIX: Final = "CUST-9"
 FILLER_ORDER_PREFIX: Final = "ORD-5"
 
@@ -132,6 +132,31 @@ ANCHOR_CUSTOMERS: Final[tuple[AnchorCustomer, ...]] = (
             "Customer with ZERO orders. Edge case: asked 'where is my order?', the "
             "agent must say there are none rather than hallucinate one. An empty "
             "result set is a distinct failure mode from a wrong result set."
+        ),
+    ),
+    AnchorCustomer(
+        id="CUST-0005",
+        # An apostrophe in the name, on purpose. O'Donnell is a genuine Spanish
+        # surname (Leopoldo O'Donnell was prime minister), so this is authentic data
+        # rather than a foreign graft.
+        email="beatriz.odonnell@example.com",
+        full_name="Beatriz O'Donnell",
+        tier="standard",
+        created_at="2025-09-11T09:00:00Z",
+        enables=(
+            "String-handling edge case, permanently present in the dataset. A query "
+            "built by concatenation instead of parameter binding breaks on this row "
+            "immediately -- which is a SQL injection vulnerability, not a cosmetic bug.\n"
+            "\n"
+            "Measured, not assumed: the es_ES Faker locale produces ZERO apostrophes, "
+            "so leaving this to the generator would have left the case uncovered. "
+            "Written by hand for the same reason every other anchor is -- what matters "
+            "is deliberate, never a lucky draw.\n"
+            "\n"
+            "This complements rather than replaces the Hypothesis property tests. The "
+            "anchor is always there, so every test run that touches names exercises it; "
+            "Hypothesis actively searches a far wider space (NULs, emoji, huge "
+            "strings). Presence and search are different kinds of coverage."
         ),
     ),
 )
@@ -272,6 +297,24 @@ ANCHOR_ORDERS: Final[tuple[AnchorOrder, ...]] = (
             "shipping fields instead of assuming 'delayed' implies 'on its way'."
         ),
     ),
+    # --- CUST-0005: the apostrophe customer ---
+    AnchorOrder(
+        id="ORD-4001",
+        customer_id="CUST-0005",
+        status="shipped",
+        total_amount_cents=3450,
+        created_at="2026-08-04T10:15:00Z",
+        estimated_delivery="2026-08-11T00:00:00Z",
+        shipped_at="2026-08-05T08:40:00Z",
+        carrier="Correos",
+        tracking_number="CO9988776655",
+        enables=(
+            "Gives the apostrophe customer an order, so the order query path is "
+            "exercised against that name too and not just the customer lookup. Also a "
+            "second unambiguous single-order customer, useful as a clean happy path "
+            "distinct from CUST-0001's three-order ambiguity."
+        ),
+    ),
 )
 
 
@@ -284,6 +327,7 @@ EXPECTED_ORDER_COUNTS: Final[dict[str, int]] = {
     "CUST-0002": 3,
     "CUST-0003": 2,
     "CUST-0004": 0,  # the empty-result edge case depends on exactly zero
+    "CUST-0005": 1,
 }
 """Order counts per anchor customer, asserted after seeding.
 

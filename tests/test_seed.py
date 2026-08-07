@@ -206,6 +206,50 @@ class TestAnchorFillerSeparation:
             db.close()
         assert schema_statuses <= {o.status for o in ANCHOR_ORDERS}
 
+    def test_an_apostrophe_name_is_present_and_queryable(self, built_db: Path) -> None:
+        """A name containing an apostrophe must exist and be retrievable.
+
+        Two separate claims, and both matter:
+
+        1. *Presence.* The es_ES Faker locale emits zero apostrophes, so this case
+           only exists because it was written by hand as an anchor. If someone
+           removes CUST-0005 thinking it is redundant, this fails.
+        2. *Queryable.* Retrieving it with a bound parameter must work. Code that
+           built the same query by string concatenation would raise a syntax error
+           here -- and that failure mode is a SQL injection hole, not a typo.
+        """
+        db = connect(built_db)
+        try:
+            names = [
+                r["full_name"] for r in db.execute("SELECT full_name FROM customers").fetchall()
+            ]
+            apostrophed = [n for n in names if "'" in n]
+            assert apostrophed, "no customer name contains an apostrophe"
+
+            # Bound parameter, the only correct way. Concatenation breaks on this row.
+            row = db.execute(
+                "SELECT id FROM customers WHERE full_name = ?", (apostrophed[0],)
+            ).fetchone()
+            assert row is not None
+        finally:
+            db.close()
+
+    def test_dataset_totals_match_the_spec(self, built_db: Path) -> None:
+        """~30 customers and ~100 orders, per the spec's section 4.
+
+        Anchors and filler are sized to add up. An earlier version assumed ~15 anchor
+        orders, ended up with 8, and quietly produced 93 orders instead of 100 --
+        nothing enforced the total, so nothing noticed.
+        """
+        db = connect(built_db)
+        try:
+            customers = db.execute("SELECT count(*) AS n FROM customers").fetchone()["n"]
+            orders = db.execute("SELECT count(*) AS n FROM orders").fetchone()["n"]
+        finally:
+            db.close()
+        assert customers == 30
+        assert orders == 100
+
     def test_delayed_exists_both_dispatched_and_not(self, built_db: Path) -> None:
         """'delayed' is the one ambiguous status, so both shapes must be present.
 

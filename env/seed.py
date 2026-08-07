@@ -63,11 +63,12 @@ from supportops.db.connection import apply_schema as create_schema
 if TYPE_CHECKING:
     import sqlite3
 
-# --- Filler volume. Matches the spec's "~30 customers and ~100 orders". -------
-# The exact numbers are arbitrary; the requirement is that filler is non-zero, so
-# the three jobs above are fulfilled. A smaller dataset would work equally well.
-FILLER_CUSTOMERS: Final = 26
-FILLER_ORDERS: Final = 85
+# --- Filler volume: chosen so anchors + filler hit the spec's "~30 customers and
+# ~100 orders" exactly. 5 anchor customers + 25 filler = 30; 9 anchor orders +
+# 91 filler = 100. Update these if the anchor count changes -- an earlier version
+# assumed ~15 anchor orders and silently produced 93 instead of 100.
+FILLER_CUSTOMERS: Final = 25
+FILLER_ORDERS: Final = 91
 
 KNOWLEDGE_BASE_DIR: Final = Path(__file__).resolve().parent / "knowledge_base"
 MIN_EXPECTED_ARTICLES: Final = 15
